@@ -278,23 +278,32 @@ def reversed_blocks(fin, block_size=4096):
 
 def convert_json_cols_to_string(cols):
     for key, value in cols.items():
-        if type(value) is dict:
-            cols[key] = json.dumps(fix_dict_encoding(value))
+        if type(value) is dict or isinstance(value, list):
+            cols[key] = json.dumps(fix_json_encoding(value))
 
     return cols
 
 
-def fix_dict_encoding(dict):
-    new_dict = {}
+def fix_json_encoding(obj):
 
-    for key, value in dict.items():
-        if isinstance(value, list):
-            new_dict[key.decode('utf-8')] = [v.decode('utf-8') for v in value]
-        elif isinstance(value, Dict):
-            new_dict[key.decode('utf-8')] = fix_dict_encoding(value)
-        elif type(value) is bytes:
-            new_dict[key.decode('utf-8')] = value.decode('utf-8')
-        else:
-            new_dict[key.decode('utf-8')] = value
 
-    return new_dict
+    if isinstance(obj, list):
+        newObj = []
+
+        for value in obj:
+            newObj.append(fix_json_encoding(value))
+
+        return newObj
+
+    elif type(obj) is dict:
+        newObj = {}
+        for key, value in obj.items():
+            newObj[key.decode('utf-8')] = fix_json_encoding(value)
+
+        return newObj
+
+    elif type(obj) is bytes:
+        return obj.decode('utf-8')
+
+    else:
+        return obj

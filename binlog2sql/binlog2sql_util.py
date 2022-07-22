@@ -13,6 +13,8 @@ from pymysqlreplication.row_event import (
     UpdateRowsEvent,
     DeleteRowsEvent,
 )
+import json
+from typing import Dict
 
 
 if sys.version > '3':
@@ -220,6 +222,8 @@ def generate_sql_pattern(binlog_event, row=None, flashback=False, no_pk=False):
                 if binlog_event.primary_key:
                     row['values'].pop(binlog_event.primary_key)
 
+            row['values'] = convert_json_cols_to_string(row['values'])
+
             template = 'INSERT INTO `{0}`.`{1}`({2}) VALUES ({3});'.format(
                 binlog_event.schema, binlog_event.table,
                 ', '.join(map(lambda key: '`%s`' % key, row['values'].keys())),
@@ -227,10 +231,15 @@ def generate_sql_pattern(binlog_event, row=None, flashback=False, no_pk=False):
             )
             values = map(fix_object, row['values'].values())
         elif isinstance(binlog_event, DeleteRowsEvent):
+            row['values'] = convert_json_cols_to_string(row['values'])
+
             template = 'DELETE FROM `{0}`.`{1}` WHERE {2} LIMIT 1;'.format(
                 binlog_event.schema, binlog_event.table, ' AND '.join(map(compare_items, row['values'].items())))
             values = map(fix_object, row['values'].values())
         elif isinstance(binlog_event, UpdateRowsEvent):
+            row['after_values'] = convert_json_cols_to_string(row['after_values'])
+            row['before_values'] = convert_json_cols_to_string(row['before_values'])
+
             template = 'UPDATE `{0}`.`{1}` SET {2} WHERE {3} LIMIT 1;'.format(
                 binlog_event.schema, binlog_event.table,
                 ', '.join(['`%s`=%%s' % k for k in row['after_values'].keys()]),
@@ -265,3 +274,27 @@ def reversed_blocks(fin, block_size=4096):
         here -= delta
         fin.seek(here, os.SEEK_SET)
         yield fin.read(delta)
+
+
+def convert_json_cols_to_string(cols):
+    for key, value in cols.items():
+        if type(value) is dict:
+            cols[key] = json.dumps(fix_dict_encoding(value))
+
+    return cols
+
+
+def fix_dict_encoding(dict):
+    new_dict = {}
+
+    for key, value in dict.items():
+        if isinstance(value, list):
+            new_dict[key.decode('utf-8')] = [v.decode('utf-8') for v in value]
+        elif isinstance(value, Dict):
+            new_dict[key.decode('utf-8')] = fix_dict_encoding(value)
+        elif type(value) is bytes:
+            new_dict[key.decode('utf-8')] = value.decode('utf-8')
+        else:
+            new_dict[key.decode('utf-8')] = value
+
+    return new_dict

@@ -44,7 +44,7 @@ class Binlog2sql(object):
 
         self.binlogList = []
         self.connection = pymysql.connect(**self.conn_setting)
-        with self.connection as cursor:
+        with self.connection.cursor() as cursor:
             cursor.execute("SHOW MASTER STATUS")
             self.eof_file, self.eof_pos = cursor.fetchone()[:2]
             cursor.execute("SHOW MASTER LOGS")
@@ -70,7 +70,7 @@ class Binlog2sql(object):
         e_start_pos, last_pos = stream.log_pos, stream.log_pos
         # to simplify code, we do not use flock for tmp_file.
         tmp_file = create_unique_file('%s.%s' % (self.conn_setting['host'], self.conn_setting['port']))
-        with temp_open(tmp_file, "w") as f_tmp, self.connection as cursor:
+        with temp_open(tmp_file, "w") as f_tmp, self.connection.cursor() as cursor:
             for binlog_event in stream:
                 if not self.stop_never:
                     try:
@@ -102,6 +102,10 @@ class Binlog2sql(object):
                     if sql:
                         print(sql)
                 elif is_dml_event(binlog_event) and event_type(binlog_event) in self.sql_type:
+                    for column in binlog_event.columns:
+                        if column.character_set_name == "utf8mb3":
+                            column.character_set_name = "utf8"
+
                     for row in binlog_event.rows:
                         sql = concat_sql_from_binlog_event(cursor=cursor, binlog_event=binlog_event, no_pk=self.no_pk,
                                                            row=row, flashback=self.flashback, e_start_pos=e_start_pos)
